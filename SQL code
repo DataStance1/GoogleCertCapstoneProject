@@ -1,0 +1,296 @@
+ -- Setting variables for regular expression based analyses
+DECLARE
+ TIMESTAMP_REGEX STRING DEFAULT r'^\d{4}-\d{1,2}-\d{1,2}[T ]\d{1,2}:\d{1,2}:\d{1,2}(\.\d{1,6})? *(([+-]\d{1,2}(:\d{1,2})?)|Z|UTC)?$';
+DECLARE
+ DATE_REGEX STRING DEFAULT r'^\d{4}-(?:[1-9]|0[1-9]|1[012])-(?:[1-9]|0[1-9]|[12][0-9]|3[01])$';
+DECLARE
+ TIME_REGEX STRING DEFAULT r'^\d{1,2}:\d{1,2}:\d{1,2}(\.\d{1,6})?$';
+ -- Setting variables for time of day/ day of week analyses
+DECLARE
+ MORNING_START,
+ MORNING_END,
+ AFTERNOON_END,
+ EVENING_END INT64;
+ -- Set the times for the times of the day
+SET
+ MORNING_START = 6;
+SET
+ MORNING_END = 12;
+SET
+ AFTERNOON_END = 18;
+SET
+ EVENING_END = 21;
+
+ -- Checking to see which column names are shared across tables
+SELECT
+ column_name,
+ COUNT(table_name)
+FROM
+ `capstone_1.INFORMATION_SCHEMA.COLUMNS`
+GROUP BY
+ 1;
+
+ -- Found that Id was a common column, making sure that it is in every table we have
+SELECT
+ table_name,
+ SUM(CASE
+     WHEN column_name = "Id" THEN 1
+   ELSE
+   0
+ END
+ ) AS has_id_column
+FROM
+ `capstone_1.INFORMATION_SCHEMA.COLUMNS`
+GROUP BY
+ 1
+ORDER BY
+ 1 ASC;
+
+ -- This query checks to make sure that each table has a column of a date or time related type
+SELECT
+ table_name,
+ SUM(CASE
+     WHEN data_type IN ("TIMESTAMP", "DATETIME", "TIME", "DATE") THEN 1
+   ELSE
+   0
+ END
+   ) AS has_time_info
+FROM
+ `capstone_1.INFORMATION_SCHEMA.COLUMNS`
+WHERE
+ data_type IN ("TIMESTAMP",
+   "DATETIME",
+   "DATE")
+GROUP BY
+ 1
+HAVING
+ has_time_info = 0;
+
+ --  checking for the names of the columns with DATETIME, TIMESTAMP, or DATE datatype
+SELECT
+ CONCAT(table_catalog,".",table_schema,".",table_name) AS table_path,
+ table_name,
+ column_name
+FROM
+ `capstone_1.INFORMATION_SCHEMA.COLUMNS`
+WHERE
+ data_type IN ("TIMESTAMP",
+   "DATETIME",
+   "DATE");
+
+--checking to see if the column name has any of the keywords below:
+ -- date, minute, daily, hourly, day, seconds
+SELECT
+ table_name,
+ column_name
+FROM
+ `capstone_1.INFORMATION_SCHEMA.COLUMNS`
+WHERE
+ REGEXP_CONTAINS(LOWER(column_name), "date|minute|daily|hourly|day|seconds");
+
+ -- ADVANCED
+ -- In the dailyactivity table we saw that there is a column called ActivityDate, let's check to see what it looks like by using the regular expression for a timestamp format to check if the column follows that pattern.
+ -- The is_timestamp column demonstrates that this column is a valid timestamp column
+
+SELECT
+ ActivityDate,
+ REGEXP_CONTAINS(STRING(ActivityDate), TIMESTAMP_REGEX) AS is_timestamp
+FROM
+ `capstone_1.dailyactivity`
+LIMIT
+ 5;
+
+ -- To quickly check if all columns follow the timestamp pattern by taking the minimum value of the boolean expression across the entire table
+SELECT
+ CASE
+   WHEN MIN(REGEXP_CONTAINS(STRING(ActivityDate), TIMESTAMP_REGEX)) = TRUE THEN "Valid"
+ ELSE
+ "Not Valid"
+END
+ AS valid_test
+FROM
+ `capstone_1.dailyactivity`;
+
+-- looking at the columns that are shared among the tables and makimg certain that the data types align between tables
+
+SELECT
+ column_name,
+ table_name,
+ data_type
+FROM
+ `capstone_1.INFORMATION_SCHEMA.COLUMNS`
+WHERE
+ REGEXP_CONTAINS(LOWER(table_name),"day|daily")
+ AND column_name IN (
+ SELECT
+   column_name
+ FROM
+   `capstone_1.INFORMATION_SCHEMA.COLUMNS`
+ WHERE
+   REGEXP_CONTAINS(LOWER(table_name),"day|daily")
+ GROUP BY
+   1
+ HAVING
+   COUNT(table_name) >=2)
+ORDER BY
+ 1;
+
+SELECT
+ A.Id,
+ A.Calories,
+ * EXCEPT(Id,
+   Calories,
+   ActivityDay,
+   SleepDay,
+   SedentaryMinutes,
+   LightlyActiveMinutes,
+   FairlyActiveMinutes,
+   VeryActiveMinutes,
+   SedentaryActiveDistance,
+   LightActiveDistance,
+   ModeratelyActiveDistance,
+   VeryActiveDistance),
+ I.SedentaryMinutes,
+ I.LightlyActiveMinutes,
+ I.FairlyActiveMinutes,
+ I.VeryActiveMinutes,
+ I.SedentaryActiveDistance,
+ I.LightActiveDistance,
+ I.ModeratelyActiveDistance,
+ I.VeryActiveDistance
+FROM
+ `capstone_1.dailyactivity` A
+LEFT JOIN
+ `capstone_1.dialycalories` C
+ON
+ A.Id = C.Id
+ AND A.ActivityDate=C.ActivityDay
+ AND A.Calories = C.Calories
+LEFT JOIN
+ `capstone_1.dailyintensities` I
+ON
+ A.Id = I.Id
+ AND A.ActivityDate=I.ActivityDay
+ AND A.FairlyActiveMinutes = I.FairlyActiveMinutes
+ AND A.LightActiveDistance = I.LightActiveDistance
+ AND A.LightlyActiveMinutes = I.LightlyActiveMinutes
+ AND A.ModeratelyActiveDistance = I.ModeratelyActiveDistance
+ AND A.SedentaryActiveDistance = I.SedentaryActiveDistance
+ AND A.SedentaryMinutes = I.SedentaryMinutes
+ AND A.VeryActiveDistance = I.VeryActiveDistance
+ AND A.VeryActiveMinutes = I.VeryActiveMinutes
+LEFT JOIN
+ `capstone_1.dailysleep` S
+ON
+ A.Id = S.Id
+ AND A.ActivityDate=S.ActivityDay
+LEFT JOIN
+ `capstone_1.sleepday` Sl
+ON
+ A.Id = Sl.Id
+ AND A.ActivityDate= DATE(Sl.SleepDay);
+ 
+ -- extracting the year and the day of the week from the activitydate
+
+SELECT *,extract(year from ActivityDate) year, 
+ CASE 
+ WHEN extract(month from ActivityDate) = 1 THEN 'January'
+ WHEN extract(month from ActivityDate) = 2 THEN 'February'
+ WHEN extract(month from ActivityDate) = 3 THEN 'March'
+ WHEN extract(month from ActivityDate) = 4 THEN 'April'
+ WHEN extract(month from ActivityDate) = 5 THEN 'May'
+ WHEN extract(month from ActivityDate) = 6 THEN 'June'
+ WHEN extract(month from ActivityDate) = 7 THEN 'July'
+ WHEN extract(month from ActivityDate) = 8 THEN 'August'
+ WHEN extract(month from ActivityDate) = 9 THEN 'September'
+ WHEN extract(month from ActivityDate) = 10 THEN 'October'
+WHEN extract(month from ActivityDate) = 11 THEN 'November'
+WHEN extract(month from ActivityDate) = 12 THEN 'December'
+END as monthname,
+CASE
+WHEN extract(dayofweek from ActivityDate) = 1 THEN 'Sunday'
+WHEN extract(dayofweek from ActivityDate) = 2 THEN 'Monday'
+WHEN extract(dayofweek from ActivityDate) = 3 THEN 'Tuesday'
+WHEN extract(dayofweek from ActivityDate) = 4 THEN 'Wednesday'
+WHEN extract(dayofweek from ActivityDate) = 5 THEN 'Thursday'
+WHEN extract(dayofweek from ActivityDate) = 6 THEN 'Friday'
+WHEN extract(dayofweek from ActivityDate) = 7 THEN 'Saturday'
+END AS dayname
+FROM `capstone_1.dailyactivity`;
+#checking to see the users and the calories burnt
+
+SELECT Id, SUM(Calories) AS total_calories
+FROM `bellabeat-021.google.da` 
+GROUP BY Id
+ORDER BY total_calories desc;
+
+# Calculating the average calories burnt by the user
+select round(avg(Calories), 1)
+FROM `bellabeat-021.google.da`; # the average calories burnt by the users is 2303.6. Which is less than the calories needed to be burnt in order to lose 1 pound.
+
+#Institute of Medicine recommends a minimum of 60 minutes per day of moderately intensity activity on most days of the week to maintain your body weight.
+select round(avg(FairlyActiveMinutes), 1)
+from `bellabeat-021.google.da`; # the avg of the fairly(moderately intensity minute is 13.6
+
+select SedentaryMinutes, sum(Calories)
+from `bellabeat-021.google.da`
+group by SedentaryMinutes;
+
+# to check the weekday that the customers use the product more by checking the sum of calories burn in a particular day.
+select dayname, sum(Calories) as sum_cal
+from `bellabeat-021.google.da`
+group by dayname
+order by sum_cal desc; # the customers use the product more in weekdays than in weekends
+
+select dayname, sum(VeryActiveMinutes) as sum_Active_minutes
+from `bellabeat-021.google.da`
+group by dayname
+order by sum_Active_minutes desc; # more calories are burn during the very active minutes but unfortunately users of this product use it to track the sedentary minutes than the active minutes like jogging
+
+select dayname, sum(SedentaryMinutes) as sum_sm
+from `bellabeat-021.google.da`
+group by dayname
+order by sum_sm desc; # The users of the app have more sedentary minutes on weekdays than weekenda. Maybe they have a sedentary work and maybe go for jogging on weekends
+
+select dayname, sum(FairlyActiveMinutes) as sum_fam
+from `bellabeat-021.google.da`
+group by dayname
+order by sum_fam desc;
+
+select dayname, sum(LightlyActiveMinutes) as sum_lam
+from `bellabeat-021.google.da`
+group by dayname
+order by sum_lam desc;
+
+select dayname, count(*) as frequency
+from `bellabeat-021.google.da`
+group by dayname
+order by frequency desc; # the app is used more on Weekdays than weekends
+
+select*, round((VeryActiveMinutes + FairlyActiveMinutes + LightlyActiveMinutes + SedentaryMinutes)/60, 1)as total_hour,
+case
+when dayname = 'Monday' then 'weekday'
+when dayname = 'Tuesday' then 'weekday'
+when dayname = 'Wednesday' then' weekday'
+when dayname = 'Thursday' then' weekday'
+when dayname = 'Friday' then' weekday'
+else 'weekend'
+end as weekpart
+from `bellabeat-021.google.da`;
+
+
+# to get the total time and the average total time each user uses the app
+select Id, sum(total_hour) as Individual_usage, sum(total_hour)/count(Id) as mean_individual_usage
+from(select*, round((VeryActiveMinutes + FairlyActiveMinutes + LightlyActiveMinutes + SedentaryMinutes)/60, 1)as total_hour,
+case
+when dayname = 'Monday' then 'weekday'
+when dayname = 'Tuesday' then 'weekday'
+when dayname = 'Wednesday' then' weekday'
+when dayname = 'Thursday' then' weekday'
+when dayname = 'Friday' then' weekday'
+else 'weekend'
+end as weekpart
+from `bellabeat-021.google.da`)
+group by Id 
+order by mean_individual_usage desc
+
