@@ -5,7 +5,7 @@ Bellabeat Case Study: How can a Wellness Technology Company Play it Smart? A cas
 This case study is the Capstone Project of Google Data Analytics Professional Certificate. The 6 steps of Data Analysis is used to present this analysis.
 * Title: Bellabeat Case Study
 * Author: Caleb Ugorji
-* Date: 11 July 2022
+* Date: 14 October 2022
 
 ## STEP 1: ASK 
 #### 1.0	BACKGROUND
